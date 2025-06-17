@@ -1,4 +1,5 @@
 {
+    "balanza_selected": "balanza1",
     "balanzas": {
         "balanza1": {
             "nombre": "Balanza Principal",
@@ -18,7 +19,7 @@
         "balanza2": {
             "nombre": "Balanza Secundaria",
             "puerto": "COM2",
-            "baudrate": 9600,
+            "baudrate": 2400,
             "bytesize": 8,
             "parity": "none",
             "stopbits": 1,
@@ -30,5 +31,6 @@
             "rts": true,
             "unidad": "kg"
         }
-    }
+    },
+    "balanza_por_defecto": "balanza1"
 }
