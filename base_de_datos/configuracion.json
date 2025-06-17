@@ -1,0 +1,10 @@
+{
+    "base_datos": {
+        "nombre_archivo": "pesaje_fardos.db",
+        "usar_ruta_compartida": false,
+        "ruta_compartida": "",
+        "timeout_conexion": 30,
+        "backup_automatico": true,
+        "carpeta_backup": "backups"
+    }
+}
