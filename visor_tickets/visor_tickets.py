@@ -5,19 +5,59 @@ from tkinter import ttk, filedialog, messagebox
 from ttkthemes import ThemedTk
 import json
 from datetime import datetime
-from reportlab.lib.pagesizes import letter
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image
+from reportlab.lib.pagesizes import letter, A4
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image, PageBreak
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
-from reportlab.lib.units import inch
+from reportlab.lib.units import inch, cm
 import subprocess
 import tempfile
+import math
+from PIL import Image as PILImage, ImageTk
 
 class VisorTickets:
     def __init__(self, root):
         self.root = root
         self.root.title("Visor de Tickets")
-        self.root.geometry("1000x700")
+        self.root.geometry("1200x800")
+        
+        # Configurar estilo para Windows 11
+        style = ttk.Style()
+        style.theme_use("clam")  # Tema base más moderno
+        
+        # Personalizar colores para un aspecto más moderno
+        style.configure("TFrame", background="#f0f0f0")
+        style.configure("TLabel", background="#f0f0f0", font=("Segoe UI", 10))
+        style.configure("TButton", font=("Segoe UI", 10), padding=6)
+        style.configure("TLabelframe", background="#f0f0f0", font=("Segoe UI", 10, "bold"))
+        style.configure("TLabelframe.Label", font=("Segoe UI", 10, "bold"))
+        
+        # Estilo para Treeview (tabla de tickets)
+        style.configure("Treeview", 
+                        background="#ffffff",
+                        foreground="#000000",
+                        rowheight=25,
+                        fieldbackground="#ffffff",
+                        font=("Segoe UI", 10))
+        style.configure("Treeview.Heading", 
+                        font=("Segoe UI", 10, "bold"),
+                        background="#e0e0e0")
+        style.map("Treeview", background=[("selected", "#0078d7")])
+        
+        # Estilo para botones de acción principales (estilo Windows 11)
+        style.configure("Accent.TButton",
+                       font=("Segoe UI", 10, "bold"),
+                       background="#0078d7",
+                       foreground="#ffffff",
+                       padding=(10, 8))
+        style.map("Accent.TButton",
+                 background=[("active", "#1e88e5"), ("pressed", "#0067c0")],
+                 relief=[("pressed", "sunken")])
+                 
+        # Estilo para botones secundarios
+        style.configure("Secondary.TButton",
+                      font=("Segoe UI", 10),
+                      padding=(8, 6))
         
         # Configuración
         self.config_file = os.path.join(os.path.dirname(__file__), "config.json")
@@ -58,31 +98,39 @@ class VisorTickets:
     def crear_interfaz(self):
         # Frame principal
         main_frame = ttk.Frame(self.root)
-        main_frame.pack(fill='both', expand=True, padx=10, pady=10)
+        main_frame.pack(fill='both', expand=True, padx=15, pady=15)
         
         # Frame superior para configuración
         config_frame = ttk.LabelFrame(main_frame, text="Configuración")
-        config_frame.pack(fill='x', padx=5, pady=5)
+        config_frame.pack(fill='x', padx=8, pady=8)
         
         # Ruta de la base de datos
-        ttk.Label(config_frame, text="Base de datos:").grid(row=0, column=0, padx=5, pady=5, sticky='w')
-        self.entry_db = ttk.Entry(config_frame, width=50)
-        self.entry_db.grid(row=0, column=1, padx=5, pady=5, sticky='ew')
+        ttk.Label(config_frame, text="Base de datos:").grid(row=0, column=0, padx=8, pady=10, sticky='w')
+        self.entry_db = ttk.Entry(config_frame, width=60, font=("Segoe UI", 10))
+        self.entry_db.grid(row=0, column=1, padx=8, pady=10, sticky='ew')
         self.entry_db.insert(0, self.db_path)
         
-        ttk.Button(config_frame, text="Examinar", command=self.seleccionar_bd).grid(row=0, column=2, padx=5, pady=5)
-        ttk.Button(config_frame, text="Guardar", command=self.guardar_ruta_bd).grid(row=0, column=3, padx=5, pady=5)
-        ttk.Button(config_frame, text="Actualizar", command=self.cargar_tickets).grid(row=0, column=4, padx=5, pady=5)
+        # Botones con iconos (simulados con texto)
+        ttk.Button(config_frame, text="📂 Examinar", command=self.seleccionar_bd).grid(row=0, column=2, padx=8, pady=10)
+        ttk.Button(config_frame, text="💾 Guardar", command=self.guardar_ruta_bd).grid(row=0, column=3, padx=8, pady=10)
+        ttk.Button(config_frame, text="🔄 Actualizar", command=self.cargar_tickets).grid(row=0, column=4, padx=8, pady=10)
         
         config_frame.columnconfigure(1, weight=1)
         
-        # Frame para la lista de tickets
-        list_frame = ttk.LabelFrame(main_frame, text="Lista de Tickets")
+        # Panel principal dividido en dos
+        panel_frame = ttk.PanedWindow(main_frame, orient=tk.HORIZONTAL)
+        panel_frame.pack(fill='both', expand=True, padx=8, pady=8)
+        
+        # Panel izquierdo: Lista de tickets
+        left_frame = ttk.Frame(panel_frame)
+        panel_frame.add(left_frame, weight=1)
+        
+        list_frame = ttk.LabelFrame(left_frame, text="Lista de Tickets")
         list_frame.pack(fill='both', expand=True, padx=5, pady=5)
         
-        # Crear tabla de tickets
+        # Crear tabla de tickets con estilo mejorado
         columns = ('numero', 'fecha', 'hora', 'fardos', 'peso', 'rinde')
-        self.tree = ttk.Treeview(list_frame, columns=columns, show='headings')
+        self.tree = ttk.Treeview(list_frame, columns=columns, show='headings', selectmode='browse')
         
         # Configurar columnas
         self.tree.heading('numero', text='Número')
@@ -92,14 +140,14 @@ class VisorTickets:
         self.tree.heading('peso', text='Peso Total')
         self.tree.heading('rinde', text='Rinde')
         
-        self.tree.column('numero', width=100)
-        self.tree.column('fecha', width=100)
-        self.tree.column('hora', width=100)
-        self.tree.column('fardos', width=100)
-        self.tree.column('peso', width=100)
-        self.tree.column('rinde', width=100)
+        self.tree.column('numero', width=100, anchor='center')
+        self.tree.column('fecha', width=100, anchor='center')
+        self.tree.column('hora', width=100, anchor='center')
+        self.tree.column('fardos', width=100, anchor='center')
+        self.tree.column('peso', width=120, anchor='center')
+        self.tree.column('rinde', width=100, anchor='center')
         
-        # Scrollbars
+        # Scrollbars con estilo
         vsb = ttk.Scrollbar(list_frame, orient="vertical", command=self.tree.yview)
         hsb = ttk.Scrollbar(list_frame, orient="horizontal", command=self.tree.xview)
         self.tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
@@ -115,21 +163,45 @@ class VisorTickets:
         # Evento de selección
         self.tree.bind('<<TreeviewSelect>>', self.seleccionar_ticket)
         
+        # Panel derecho: Detalles del ticket
+        right_frame = ttk.Frame(panel_frame)
+        panel_frame.add(right_frame, weight=1)
+        
         # Frame para detalles del ticket
-        self.detail_frame = ttk.LabelFrame(main_frame, text="Detalles del Ticket")
+        self.detail_frame = ttk.LabelFrame(right_frame, text="Detalles del Ticket")
         self.detail_frame.pack(fill='both', expand=True, padx=5, pady=5)
         
-        # Crear campos de detalles
-        self.detalle_text = tk.Text(self.detail_frame, height=10, wrap=tk.WORD)
-        self.detalle_text.pack(fill='both', expand=True, padx=5, pady=5)
+        # Crear campos de detalles con mejor formato
+        self.detalle_text = tk.Text(self.detail_frame, height=10, wrap=tk.WORD, 
+                                   font=("Segoe UI", 10),
+                                   bg="#ffffff", fg="#000000",
+                                   padx=10, pady=10,
+                                   borderwidth=1, relief="solid")
+        self.detalle_text.pack(fill='both', expand=True, padx=8, pady=8)
         self.detalle_text.config(state=tk.DISABLED)
+        
+        # Scrollbar para el texto de detalles
+        text_vsb = ttk.Scrollbar(self.detail_frame, orient="vertical", command=self.detalle_text.yview)
+        self.detalle_text.configure(yscrollcommand=text_vsb.set)
+        text_vsb.place(relx=1.0, rely=0.0, relheight=1.0, anchor='ne')
         
         # Frame para botones de acción
         action_frame = ttk.Frame(main_frame)
-        action_frame.pack(fill='x', padx=5, pady=5)
+        action_frame.pack(fill='x', padx=8, pady=12)
         
-        ttk.Button(action_frame, text="Exportar a PDF", command=self.exportar_pdf).pack(side='left', padx=5)
-        ttk.Button(action_frame, text="Imprimir", command=self.imprimir_ticket).pack(side='left', padx=5)
+        # Botones modernos con iconos
+        export_btn = ttk.Button(action_frame, text="📄 Exportar a PDF", command=self.exportar_pdf, 
+                               width=20, style="Accent.TButton")
+        export_btn.pack(side='left', padx=8)
+        
+        print_btn = ttk.Button(action_frame, text="🖨️ Imprimir", command=self.imprimir_ticket, 
+                              width=15)
+        print_btn.pack(side='left', padx=8)
+        
+        # Botón de ayuda
+        help_btn = ttk.Button(action_frame, text="❓ Ayuda", 
+                             width=10)
+        help_btn.pack(side='right', padx=8)
     
     def seleccionar_bd(self):
         db_path = filedialog.askopenfilename(
@@ -297,33 +369,70 @@ class VisorTickets:
                      self.ticket_seleccionado['kg_bruto_romaneo']) * 100
             rinde = round(rinde, 2)
         
-        # Formatear detalles
-        detalles = f"""
-TICKET DE PESAJE #{self.ticket_seleccionado['numero']}
-==============================================
-Fecha: {self.ticket_seleccionado['fecha']}
-Hora: {self.ticket_seleccionado['hora']}
-Cantidad de fardos: {self.ticket_seleccionado['cantidad_fardos']}
-Peso total: {self.ticket_seleccionado['peso']:.2f} kg
-Kg bruto romaneo: {self.ticket_seleccionado['kg_bruto_romaneo']:.2f} kg
-Agregado: {self.ticket_seleccionado['agregado']:.2f} kg
-Resto: {self.ticket_seleccionado['resto']:.2f} kg
-Rinde: {rinde:.2f}%
-Observaciones: {self.ticket_seleccionado['observaciones']}
-
-DETALLE DE FARDOS:
-==============================================
-"""
+        # Formatear detalles con mejor estilo
+        self.detalle_text.tag_configure("titulo", font=("Segoe UI", 14, "bold"), foreground="#0078d7")
+        self.detalle_text.tag_configure("subtitulo", font=("Segoe UI", 12, "bold"), foreground="#333333")
+        self.detalle_text.tag_configure("etiqueta", font=("Segoe UI", 10, "bold"), foreground="#555555")
+        self.detalle_text.tag_configure("valor", font=("Segoe UI", 10), foreground="#000000")
+        self.detalle_text.tag_configure("destacado", font=("Segoe UI", 11, "bold"), foreground="#0078d7")
+        self.detalle_text.tag_configure("separador", font=("Segoe UI", 1))
         
-        # Agregar detalle de fardos si están disponibles
+        # Título
+        self.detalle_text.insert(tk.END, f"\nTICKET DE PESAJE #{self.ticket_seleccionado['numero']}\n", "titulo")
+        self.detalle_text.insert(tk.END, "\n", "separador")
+        
+        # Información principal
+        self.detalle_text.insert(tk.END, "Fecha: ", "etiqueta")
+        self.detalle_text.insert(tk.END, f"{self.ticket_seleccionado['fecha']}\n", "valor")
+        
+        self.detalle_text.insert(tk.END, "Hora: ", "etiqueta")
+        self.detalle_text.insert(tk.END, f"{self.ticket_seleccionado['hora']}\n", "valor")
+        
+        self.detalle_text.insert(tk.END, "Cantidad de fardos: ", "etiqueta")
+        self.detalle_text.insert(tk.END, f"{self.ticket_seleccionado['cantidad_fardos']}\n", "valor")
+        
+        self.detalle_text.insert(tk.END, "Peso total: ", "etiqueta")
+        self.detalle_text.insert(tk.END, f"{self.ticket_seleccionado['peso']:.2f} kg\n", "destacado")
+        
+        self.detalle_text.insert(tk.END, "Kg bruto romaneo: ", "etiqueta")
+        self.detalle_text.insert(tk.END, f"{self.ticket_seleccionado['kg_bruto_romaneo']:.2f} kg\n", "valor")
+        
+        self.detalle_text.insert(tk.END, "Agregado: ", "etiqueta")
+        self.detalle_text.insert(tk.END, f"{self.ticket_seleccionado['agregado']:.2f} kg\n", "valor")
+        
+        self.detalle_text.insert(tk.END, "Resto: ", "etiqueta")
+        self.detalle_text.insert(tk.END, f"{self.ticket_seleccionado['resto']:.2f} kg\n", "valor")
+        
+        self.detalle_text.insert(tk.END, "Rinde: ", "etiqueta")
+        self.detalle_text.insert(tk.END, f"{rinde:.2f}%\n", "destacado")
+        
+        self.detalle_text.insert(tk.END, "Observaciones: ", "etiqueta")
+        self.detalle_text.insert(tk.END, f"{self.ticket_seleccionado['observaciones']}\n", "valor")
+        
+        self.detalle_text.insert(tk.END, "\n", "separador")
+        self.detalle_text.insert(tk.END, "DETALLE DE FARDOS\n", "subtitulo")
+        self.detalle_text.insert(tk.END, "\n", "separador")
+        
+        # Agregar detalle de fardos en formato de tabla
         if 'fardos' in self.ticket_seleccionado and self.ticket_seleccionado['fardos']:
-            for fardo in self.ticket_seleccionado['fardos']:
-                hora = datetime.fromisoformat(fardo['hora_pesaje']).strftime("%H:%M:%S") if fardo['hora_pesaje'] else ""
-                detalles += f"Fardo #{fardo['numero']}: {fardo['peso']:.2f} kg ({hora})\n"
+            # Mostrar fardos en formato de tabla (3 columnas)
+            fardos = self.ticket_seleccionado['fardos']
+            columnas = 3  # Mostrar 3 fardos por fila
+            
+            # Encabezado de columnas
+            self.detalle_text.insert(tk.END, f"{'Nº':^8} {'Peso (kg)':^10} {'Hora':^10}    " * columnas + "\n", "etiqueta")
+            
+            # Datos de fardos
+            for i in range(0, len(fardos), columnas):
+                linea = ""
+                for j in range(columnas):
+                    if i + j < len(fardos):
+                        fardo = fardos[i + j]
+                        hora = datetime.fromisoformat(fardo['hora_pesaje']).strftime("%H:%M") if fardo['hora_pesaje'] else "--:--"
+                        linea += f"{fardo['numero']:^8} {fardo['peso']:^10.2f} {hora:^10}    "
+                self.detalle_text.insert(tk.END, linea + "\n", "valor")
         else:
-            detalles += "No hay información detallada de fardos disponible."
-        
-        self.detalle_text.insert(tk.END, detalles)
+            self.detalle_text.insert(tk.END, "No hay información detallada de fardos disponible.", "valor")
         
         # Deshabilitar el widget de texto
         self.detalle_text.config(state=tk.DISABLED)
@@ -350,27 +459,56 @@ DETALLE DE FARDOS:
             messagebox.showerror("Error", f"Error al generar el PDF: {str(e)}")
     
     def generar_pdf(self, file_path):
-        # Crear documento
-        doc = SimpleDocTemplate(file_path, pagesize=letter)
+        # Crear documento con mejor tamaño de página
+        doc = SimpleDocTemplate(file_path, pagesize=A4,
+                              leftMargin=1.5*cm, rightMargin=1.5*cm,
+                              topMargin=1.5*cm, bottomMargin=1.5*cm)
         elements = []
         
-        # Estilos
-        styles = getSampleStyleSheet()
-        title_style = styles['Heading1']
-        subtitle_style = styles['Heading2']
-        normal_style = styles['Normal']
+        # Verificar que hay ticket seleccionado
+        if not self.ticket_seleccionado:
+            raise ValueError("No hay ticket seleccionado para exportar a PDF.")
         
-        # Estilo personalizado para el encabezado
-        header_style = ParagraphStyle(
-            'Header',
+        # Estilos mejorados
+        styles = getSampleStyleSheet()
+        
+        # Estilos personalizados para un aspecto más moderno
+        title_style = ParagraphStyle(
+            'CustomTitle',
             parent=styles['Heading1'],
+            fontSize=18,
             alignment=1,  # Centrado
-            spaceAfter=12
+            spaceAfter=0.3*cm,
+            textColor=colors.HexColor("#0078d7")
         )
         
-        # Título
-        elements.append(Paragraph(f"TICKET DE PESAJE #{self.ticket_seleccionado['numero']}", header_style))
-        elements.append(Spacer(1, 0.25*inch))
+        subtitle_style = ParagraphStyle(
+            'CustomSubtitle',
+            parent=styles['Heading2'],
+            fontSize=14,
+            alignment=0,  # Izquierda
+            spaceAfter=0.2*cm,
+            textColor=colors.HexColor("#333333")
+        )
+        
+        normal_style = ParagraphStyle(
+            'CustomNormal',
+            parent=styles['Normal'],
+            fontSize=10,
+            spaceAfter=0.1*cm
+        )
+        
+        footer_style = ParagraphStyle(
+            'Footer',
+            parent=styles['Normal'],
+            fontSize=8,
+            alignment=1,  # Centrado
+            textColor=colors.HexColor("#666666")
+        )
+        
+        # Título con formato mejorado
+        elements.append(Paragraph(f"TICKET DE PESAJE #{self.ticket_seleccionado['numero']}", title_style))
+        elements.append(Spacer(1, 0.5*cm))
         
         # Calcular rinde
         rinde = 0
@@ -381,7 +519,7 @@ DETALLE DE FARDOS:
                      self.ticket_seleccionado['kg_bruto_romaneo']) * 100
             rinde = round(rinde, 2)
         
-        # Información del ticket
+        # Información del ticket con mejor formato
         data = [
             ["Número:", str(self.ticket_seleccionado['numero'])],
             ["Fecha:", self.ticket_seleccionado['fecha']],
@@ -392,78 +530,144 @@ DETALLE DE FARDOS:
             ["Agregado:", f"{self.ticket_seleccionado['agregado']:.2f} kg"],
             ["Resto:", f"{self.ticket_seleccionado['resto']:.2f} kg"],
             ["Rinde:", f"{rinde:.2f}%"],
-            ["Observaciones:", self.ticket_seleccionado['observaciones']]
+            ["Observaciones:", self.ticket_seleccionado['observaciones'] if self.ticket_seleccionado['observaciones'] else "-"]
         ]
         
-        # Crear tabla
-        table = Table(data, colWidths=[2*inch, 4*inch])
-        table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (0, -1), colors.lightgrey),
-            ('TEXTCOLOR', (0, 0), (0, -1), colors.black),
+        # Crear tabla con estilo moderno
+        info_table = Table(data, colWidths=[4*cm, 12*cm])
+        info_table.setStyle(TableStyle([
+            # Fondo de encabezados
+            ('BACKGROUND', (0, 0), (0, -1), colors.HexColor("#f0f0f0")),
+            # Color de texto
+            ('TEXTCOLOR', (0, 0), (0, -1), colors.HexColor("#333333")),
+            # Alineación
             ('ALIGN', (0, 0), (0, -1), 'RIGHT'),
             ('ALIGN', (1, 0), (1, -1), 'LEFT'),
+            # Fuentes
             ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+            ('FONTNAME', (1, 0), (1, -1), 'Helvetica'),
+            # Padding
+            ('TOPPADDING', (0, 0), (-1, -1), 6),
             ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
-            ('BACKGROUND', (1, 4), (1, 4), colors.lightblue),  # Destacar el peso
-            ('GRID', (0, 0), (-1, -1), 1, colors.black)
+            ('LEFTPADDING', (0, 0), (-1, -1), 10),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 10),
+            # Destacar información importante
+            ('BACKGROUND', (1, 4), (1, 4), colors.HexColor("#e6f2ff")),  # Peso total
+            ('BACKGROUND', (1, 8), (1, 8), colors.HexColor("#e6f2ff")),  # Rinde
+            ('FONTNAME', (1, 4), (1, 4), 'Helvetica-Bold'),
+            ('FONTNAME', (1, 8), (1, 8), 'Helvetica-Bold'),
+            # Bordes
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#cccccc")),
+            ('BOX', (0, 0), (-1, -1), 1, colors.HexColor("#999999")),
+            # Redondear esquinas (simulado con colores)
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#f0f0f0")),
         ]))
         
-        elements.append(table)
-        elements.append(Spacer(1, 0.5*inch))
+        elements.append(info_table)
+        elements.append(Spacer(1, 0.8*cm))
         
         # Agregar tabla de fardos si están disponibles
         if 'fardos' in self.ticket_seleccionado and self.ticket_seleccionado['fardos']:
-            elements.append(Spacer(1, 0.25*inch))
             elements.append(Paragraph("DETALLE DE FARDOS", subtitle_style))
-            elements.append(Spacer(1, 0.15*inch))
+            elements.append(Spacer(1, 0.3*cm))
             
-            # Cabecera de la tabla de fardos
-            fardos_data = [["Nº Fardo", "Peso (kg)", "Hora"]]
+            fardos = self.ticket_seleccionado['fardos']
             
-            # Datos de fardos
-            for fardo in self.ticket_seleccionado['fardos']:
-                hora = datetime.fromisoformat(fardo['hora_pesaje']).strftime("%H:%M:%S") if fardo['hora_pesaje'] else ""
-                fardos_data.append([
-                    str(fardo['numero']),
-                    f"{fardo['peso']:.2f}",
-                    hora
-                ])
+            # Determinar cuántas columnas usar según la cantidad de fardos
+            if len(fardos) <= 10:
+                cols = 1  # Una columna para pocos fardos
+            elif len(fardos) <= 30:
+                cols = 2  # Dos columnas para cantidad media
+            else:
+                cols = 3  # Tres columnas para muchos fardos
+                
+            # Organizar los fardos en columnas
+            fardos_por_columna = math.ceil(len(fardos) / cols)
             
-            # Crear tabla de fardos
-            fardos_table = Table(fardos_data, colWidths=[1.5*inch, 1.5*inch, 1.5*inch])
-            fardos_table.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, 0), colors.lightgrey),
-                ('TEXTCOLOR', (0, 0), (-1, 0), colors.black),
-                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            # Crear datos para la tabla de fardos en múltiples columnas
+            fardos_data = []
+            
+            # Crear encabezados para cada columna
+            headers = []
+            for i in range(cols):
+                headers.extend(["Nº", "Peso (kg)", "Hora"])
+            fardos_data.append(headers)
+            
+            # Llenar la tabla con los datos de fardos
+            for i in range(fardos_por_columna):
+                row = []
+                for col in range(cols):
+                    idx = i + col * fardos_por_columna
+                    if idx < len(fardos):
+                        fardo = fardos[idx]
+                        hora = datetime.fromisoformat(fardo['hora_pesaje']).strftime("%H:%M") if fardo['hora_pesaje'] else "-"
+                        row.extend([
+                            str(fardo['numero']),
+                            f"{fardo['peso']:.2f}",
+                            hora
+                        ])
+                    else:
+                        row.extend(["", "", ""])
+                fardos_data.append(row)
+            
+            # Calcular anchos de columna
+            col_widths = [1.5*cm, 2.5*cm, 2*cm] * cols
+            
+            # Crear tabla de fardos con estilo moderno
+            fardos_table = Table(fardos_data, colWidths=col_widths)
+            
+            # Estilos para la tabla de fardos
+            table_style = [
+                # Encabezados
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#e6e6e6")),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.HexColor("#333333")),
                 ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                ('BOTTOMPADDING', (0, 0), (-1, 0), 6),
-                ('GRID', (0, 0), (-1, -1), 1, colors.black)
-            ]))
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('FONTSIZE', (0, 0), (-1, -1), 9),
+                # Bordes
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#cccccc")),
+                ('BOX', (0, 0), (-1, -1), 1, colors.HexColor("#999999")),
+                # Padding
+                ('TOPPADDING', (0, 0), (-1, -1), 4),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+            ]
+            
+            # Aplicar colores alternados a las filas para mejor legibilidad
+            for i in range(1, len(fardos_data)):
+                if i % 2 == 0:
+                    table_style.append(('BACKGROUND', (0, i), (-1, i), colors.HexColor("#f9f9f9")))
+            
+            fardos_table.setStyle(TableStyle(table_style))
             
             elements.append(fardos_table)
-            elements.append(Spacer(1, 0.5*inch))
+            elements.append(Spacer(1, 0.8*cm))
         
-        # Tabla de firmas
+        # Tabla de firmas con mejor estilo
         firma_data = [
             ["Operador", "Cliente"],
             ["", ""],
-            ["_________________", "_________________"],
-            ["", ""]
+            ["", ""],
+            ["", ""],
+            ["_________________________", "_________________________"],
+            ["Firma y aclaración", "Firma y aclaración"]
         ]
         
-        firma_table = Table(firma_data, colWidths=[3*inch, 3*inch])
+        firma_table = Table(firma_data, colWidths=[8*cm, 8*cm])
         firma_table.setStyle(TableStyle([
             ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
             ('FONTNAME', (0, 0), (1, 0), 'Helvetica-Bold'),
-            ('LINEBELOW', (0, 2), (1, 2), 1, colors.black),
-            ('TOPPADDING', (0, 1), (1, 1), 40),  # Espacio para la firma
+            ('FONTNAME', (0, 5), (1, 5), 'Helvetica'),
+            ('FONTSIZE', (0, 5), (1, 5), 8),
+            ('TEXTCOLOR', (0, 5), (1, 5), colors.HexColor("#666666")),
+            ('LINEBELOW', (0, 4), (1, 4), 1, colors.HexColor("#333333")),
+            ('TOPPADDING', (0, 1), (1, 3), 10),  # Espacio para la firma
         ]))
         
         elements.append(firma_table)
         
         # Pie de página
-        elements.append(Spacer(1, 0.5*inch))
-        elements.append(Paragraph(f"Generado el {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}", normal_style))
+        elements.append(Spacer(1, 1*cm))
+        elements.append(Paragraph(f"Documento generado el {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}", footer_style))
         
         # Generar PDF
         doc.build(elements)
@@ -505,6 +709,19 @@ DETALLE DE FARDOS:
             pass  # Ignorar errores al eliminar archivos temporales
 
 if __name__ == "__main__":
-    root = ThemedTk(theme="arc")  # Usar un tema moderno
+    # Configurar tema moderno para Windows 11
+    try:
+        root = ThemedTk(theme="azure")  # Tema más moderno y compatible con Windows 11
+    except:
+        # Si el tema azure no está disponible, usar un tema alternativo
+        root = ThemedTk(theme="arc")
+    
+    # Configurar icono de la aplicación (opcional)
+    # root.iconbitmap("path/to/icon.ico")  # Descomentar y ajustar si se tiene un icono
+    
+    # Configurar DPI para mejor visualización en pantallas de alta resolución
+    root.tk.call('tk', 'scaling', 1.3)
+    
+    # Iniciar la aplicación
     app = VisorTickets(root)
     root.mainloop()
